@@ -2,7 +2,7 @@
 
 **Skill Atlas** turns a job-search question — *"what do I actually need to learn to become an X?"* — into a graph traversal. Skills, courses and job roles are modeled as a connected graph in [CognoDB](https://console.cognodb.com), and the app walks that graph to answer questions a flat spreadsheet can't: which roles are you already closest to, which courses close the gap, and in what order should you take them given each course's own prerequisites.
 
-- **Live demo:** _TODO — deploy and add link_ (frontend on Vercel, API on Railway, data on CognoDB Cloud)
+- **Live demo:** _TODO — deploy and add link_ (frontend + API on Vercel, data on CognoDB Cloud)
 - **Screen recording:** _TODO — add link_
 
 ---
@@ -67,6 +67,8 @@ The seed dataset (`backend/seed/seed_data.py`) loads **63 skills** across 9 cate
 
 ```
 backend/
+  api/
+    index.py           Vercel serverless entrypoint -- re-exports app.main:app
   app/
     main.py          FastAPI app, CORS, error handling, serves the built frontend
     config.py         Environment variable loading
@@ -85,6 +87,7 @@ frontend/
     components/         Reusable UI (skill picker, cards, loading/empty/error states, skill graph SVG)
     pages/               One file per route
     state/               Known-skills selection, persisted to localStorage
+vercel.json          Routes /api/* to the backend function, everything else to the built frontend
 README.md
 .env.example
 ```
@@ -185,17 +188,12 @@ If CognoDB is unreachable — wrong credentials, instance paused, network issue 
 
 ## Deployment
 
-The live demo runs as two separately hosted services, both on genuinely free tiers (no trial-credit expiry):
+The live demo runs as a **single Vercel project** covering both the frontend and the API — no separate backend host, and no card-verification step to get started.
 
-- **Backend (Render)** — deployed from the `backend/` directory via the `render.yaml` Blueprint at the repo root (Render dashboard → New → Blueprint → select this repo). The blueprint pins the build/start commands:
-  ```
-  buildCommand: pip install -r requirements.txt
-  startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-  ```
-  Environment variables (`COGNODB_URI`, `COGNODB_USER`, `COGNODB_PASSWORD`, `COGNODB_DATABASE`, `CORS_ORIGINS`) are marked `sync: false` in the blueprint, so Render prompts for them in its dashboard rather than reading them from the repo — the same names as `.env`, just entered through the platform's UI instead of a file. Render's free tier spins a service down after 15 minutes of inactivity, so the first request after a quiet period takes ~30-50s to wake it back up.
+- **`vercel.json`** (repo root) defines two builds and routes between them: `frontend/` builds via `@vercel/static-build` (the existing `npm run build` / Vite output), and `backend/api/index.py` builds via `@vercel/python` as a serverless function. Requests to `/api/*` route to the Python function; everything else falls through to the built frontend, with a filesystem check first so real static assets (JS/CSS bundles) are served directly rather than through the SPA fallback.
+- **`backend/api/index.py`** is a thin entrypoint: it puts `backend/` on `sys.path` and re-exports `app` from `backend/app/main.py` (Vercel's Python runtime looks for a top-level `app` ASGI object). The FastAPI app itself is untouched — same routers, same Cypher queries.
+- **Same-origin, no CORS to configure** — since the frontend and API are served from the same Vercel domain, `frontend/src/api/client.ts`'s default relative `/api` path just works, the same way it does in local single-process mode. `VITE_API_BASE_URL` and `CORS_ORIGINS` are only needed for local two-process dev (`http://localhost:5173` calling `http://localhost:8000`).
+- **Environment variables** (`COGNODB_URI`, `COGNODB_USER`, `COGNODB_PASSWORD`, `COGNODB_DATABASE`) are set once in the Vercel project's dashboard (Settings → Environment Variables) — same names as `.env`, read by `backend/app/config.py` exactly as they are locally.
+- **Cold starts** — each serverless invocation may start fresh, so `backend/app/db.py`'s `get_session()` lazily calls `init_driver()` if the driver hasn't been created yet in that instance, rather than relying solely on FastAPI's startup event.
 
-- **Frontend (Vercel)** — deployed from the `frontend/` directory with the Vite preset. `frontend/vercel.json` adds an SPA rewrite so client-side routes (e.g. `/roles/backend_engineer`) resolve correctly on a hard refresh. One build-time environment variable is set: `VITE_API_BASE_URL`, pointing at the Render backend's `/api` path — this is what lets `frontend/src/api/client.ts` call a different origin than the one it's served from (see the comment there for why the local/single-service default is different).
-
-- **CORS** — `CORS_ORIGINS` on Render is locked to the exact Vercel URL, not a wildcard, so only the deployed frontend can call the API from a browser.
-
-Redeploying either service is just a `git push` — both platforms auto-deploy from the `main` branch.
+Redeploying is a `git push` to `main` — Vercel auto-deploys the whole project from one commit.

@@ -63,6 +63,11 @@ def close_driver() -> None:
 @contextmanager
 def get_session() -> Iterator[Any]:
     if _driver is None:
+        # Normally set by the FastAPI startup event. Falling back to a
+        # lazy init here too, since serverless runtimes (Vercel) don't
+        # always guarantee a fresh cold start ran that event first.
+        init_driver()
+    if _driver is None:
         raise DatabaseUnavailableError(
             "No database driver configured. Check COGNODB_URI / COGNODB_PASSWORD."
         )

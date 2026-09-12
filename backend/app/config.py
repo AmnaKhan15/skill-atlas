@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-# Load a local .env file in development. In production (Render, etc.)
+# Load a local .env file in development. In production (Vercel, etc.)
 # real environment variables are set in the platform dashboard instead.
 try:
     from dotenv import load_dotenv
