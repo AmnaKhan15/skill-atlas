@@ -67,8 +67,6 @@ The seed dataset (`backend/seed/seed_data.py`) loads **63 skills** across 9 cate
 
 ```
 backend/
-  api/
-    index.py           Vercel serverless entrypoint -- re-exports app.main:app
   app/
     main.py          FastAPI app, CORS, error handling, serves the built frontend
     config.py         Environment variable loading
@@ -87,7 +85,7 @@ frontend/
     components/         Reusable UI (skill picker, cards, loading/empty/error states, skill graph SVG)
     pages/               One file per route
     state/               Known-skills selection, persisted to localStorage
-vercel.json          Routes /api/* to the backend function, everything else to the built frontend
+vercel.json          Declares the frontend + backend services and routes /api/* to the backend
 README.md
 .env.example
 ```
@@ -188,12 +186,12 @@ If CognoDB is unreachable — wrong credentials, instance paused, network issue 
 
 ## Deployment
 
-The live demo runs as a **single Vercel project** covering both the frontend and the API — no separate backend host, and no card-verification step to get started.
+The live demo runs as a **single Vercel project** with two services defined in the root `vercel.json` — no separate backend host, and no card-verification step to get started.
 
-- **`vercel.json`** (repo root) defines two builds and routes between them: `frontend/` builds via `@vercel/static-build` (the existing `npm run build` / Vite output), and `backend/api/index.py` builds via `@vercel/python` as a serverless function. Requests to `/api/*` route to the Python function; everything else falls through to the built frontend, with a filesystem check first so real static assets (JS/CSS bundles) are served directly rather than through the SPA fallback.
-- **`backend/api/index.py`** is a thin entrypoint: it puts `backend/` on `sys.path` and re-exports `app` from `backend/app/main.py` (Vercel's Python runtime looks for a top-level `app` ASGI object). The FastAPI app itself is untouched — same routers, same Cypher queries.
-- **Same-origin, no CORS to configure** — since the frontend and API are served from the same Vercel domain, `frontend/src/api/client.ts`'s default relative `/api` path just works, the same way it does in local single-process mode. `VITE_API_BASE_URL` and `CORS_ORIGINS` are only needed for local two-process dev (`http://localhost:5173` calling `http://localhost:8000`).
+- **`vercel.json`** (repo root) declares a `frontend` service (`root: frontend`, Vite preset) and a `backend` service (`root: backend`, auto-detected as FastAPI). Vercel builds and runs the backend as its own persistent service straight from `backend/Procfile`'s start command (`uvicorn app.main:app --host 0.0.0.0 --port $PORT`) — the same FastAPI app used locally, unchanged.
+- **Rewrites** route `/api/*` to the `backend` service and everything else to the `frontend` service, both served from one Vercel domain.
+- **Same-origin, no CORS to configure** — since the frontend and API share a domain, `frontend/src/api/client.ts`'s default relative `/api` path just works, the same way it does in local single-process mode. `VITE_API_BASE_URL` and `CORS_ORIGINS` are only needed for local two-process dev (`http://localhost:5173` calling `http://localhost:8000`).
 - **Environment variables** (`COGNODB_URI`, `COGNODB_USER`, `COGNODB_PASSWORD`, `COGNODB_DATABASE`) are set once in the Vercel project's dashboard (Settings → Environment Variables) — same names as `.env`, read by `backend/app/config.py` exactly as they are locally.
-- **Cold starts** — each serverless invocation may start fresh, so `backend/app/db.py`'s `get_session()` lazily calls `init_driver()` if the driver hasn't been created yet in that instance, rather than relying solely on FastAPI's startup event.
+- **`backend/app/db.py`**'s `get_session()` lazily calls `init_driver()` if the driver hasn't been created yet, as a safety net alongside FastAPI's normal startup-event initialization.
 
 Redeploying is a `git push` to `main` — Vercel auto-deploys the whole project from one commit.
