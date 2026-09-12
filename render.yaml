@@ -1,0 +1,25 @@
+# Render Blueprint for the backend API. Deploy via Render's dashboard:
+# New -> Blueprint -> select this repo -> Render reads this file and
+# proposes the service below. Secret values (marked sync: false) are
+# left blank for you to type into the Render dashboard -- they are
+# never committed to the repo.
+services:
+  - type: web
+    name: skill-atlas-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: COGNODB_URI
+        sync: false
+      - key: COGNODB_USER
+        sync: false
+      - key: COGNODB_PASSWORD
+        sync: false
+      - key: COGNODB_DATABASE
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
